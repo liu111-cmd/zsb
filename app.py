@@ -123,6 +123,20 @@ def segment_and_count(text):
 # 4. 定义图表创建函数（满足作业：pyecharts绘制词云+7种以上图表）
 def generate_chart(chart_type, filtered_word_data, top20_words, top20_counts):
     """根据选择的图表类型，生成对应的pyecharts图表"""
+    # 先统一校验并处理数据，确保X轴和Y轴长度一致、Y轴为一维数字列表
+    # 数据长度校准
+    min_len = min(len(top20_words), len(top20_counts))
+    top20_words = top20_words[:min_len]
+    top20_counts = top20_counts[:min_len]
+    
+    # 确保top20_counts是一维整数列表
+    top20_counts = [int(count) for count in top20_counts if count is not None]
+    
+    # 再次校准长度（防止转换后长度不一致）
+    min_len = min(len(top20_words), len(top20_counts))
+    top20_words = top20_words[:min_len]
+    top20_counts = top20_counts[:min_len]
+
     if chart_type == "词云图":
         # 词云图（满足作业词云要求）
         wordcloud = (
@@ -161,53 +175,88 @@ def generate_chart(chart_type, filtered_word_data, top20_words, top20_counts):
         return bar
     
     elif chart_type == "词频趋势折线图":
+        # 修复折线图：确保数据格式正确，配置更稳定
         line = (
-        Line()
-        .add_xaxis(top20_words)
-        .add_yaxis(
-            series_name="词频趋势",  # 明确指定参数名，避免位置参数歧义
-            y_axis=top20_counts,     # 明确指定y轴数据参数名
-            mark_point_opts=opts.MarkPointOpts(
-                data=[opts.MarkPointItem(type_="max"), opts.MarkPointItem(type_="min")]
-            ),
-            line_style_opts=opts.LineStyleOpts(width=3, color="#ff4d4f")
+            Line(init_opts=opts.InitOpts(width="100%", height="600px"))  # 明确初始化配置
+            .add_xaxis(xaxis_data=top20_words)  # 显式指定X轴数据
+            .add_yaxis(
+                series_name="词频数量",  # 修正系列名称，更准确
+                y_axis=top20_counts,     # 显式指定Y轴数据
+                mark_point_opts=opts.MarkPointOpts(
+                    data=[opts.MarkPointItem(type_="max", name="最大值"), opts.MarkPointItem(type_="min", name="最小值")]
+                ),
+                mark_line_opts=opts.MarkLineOpts(
+                    data=[opts.MarkLineItem(type_="average", name="平均值")]  # 增加平均线，更实用
+                ),
+                line_style_opts=opts.LineStyleOpts(width=3, color="#ff4d4f"),
+                symbol="circle",  # 显示数据点
+                symbol_size=8,    # 数据点大小
+            )
+            .set_global_opts(
+                title_opts=opts.TitleOpts(title="词频排名前20折线图", subtitle="展示词频变化趋势"),
+                xaxis_opts=opts.AxisOpts(
+                    axislabel_opts=opts.LabelOpts(rotate=-45, font_size=10),  # 优化标签显示
+                    name="词汇",
+                    name_location="middle",
+                    name_gap=30
+                ),
+                yaxis_opts=opts.AxisOpts(
+                    name="词频数量",
+                    name_location="middle",
+                    name_gap=40,
+                    min_=0  # Y轴从0开始，更符合词频展示逻辑
+                ),
+                tooltip_opts=opts.TooltipOpts(trigger="axis", formatter="{b}：{c}次"),
+                legend_opts=opts.LegendOpts(pos_top="10px")
+            )
         )
-        .set_global_opts(
-            title_opts=opts.TitleOpts(title="词频排名前20折线图", subtitle="展示词频变化趋势"),
-            xaxis_opts=opts.AxisOpts(axislabel_opts=opts.LabelOpts(rotate=-45)),
-            yaxis_opts=opts.AxisOpts(name="词频数量"),
-            tooltip_opts=opts.TooltipOpts(trigger="item")
-        )
-    )
         return line
     
     elif chart_type == "词频占比饼图":
+        # 修复饼图：移除LegendOpts无效的width参数，优化数据配置
+        pie_data = list(zip(top20_words, top20_counts))
+        # 避免空数据触发异常
+        if not pie_data:
+            pie_data = [("无有效数据", 1)]
+            top20_words = ["无有效数据"]
+            top20_counts = [1]
+        
         pie = (
-        Pie()
-        .add(
-            "",
-            list(zip(top20_words, top20_counts)),
-            radius=["30%", "75%"],
-            rosetype="radius"  # 玫瑰图样式，更美观
-        )
-        .set_global_opts(
-            title_opts=opts.TitleOpts(title="词频排名前20饼图", subtitle="展示各词汇词频占比"),
-            # 修复中文逗号为英文逗号
-            legend_opts=opts.LegendOpts(orient="vertical", pos_left="left", width=100)
-        )
-        .set_series_opts(
-            tooltip_opts=opts.TooltipOpts(formatter="{b}：{c}次（{d}%）")
-        )
+            Pie(init_opts=opts.InitOpts(width="100%", height="600px"))
+            .add(
+                series_name="词频",
+                data_pair=pie_data,
+                radius=["30%", "75%"],
+                rosetype="radius"  # 玫瑰图样式，更美观
+            )
+            .set_global_opts(
+                title_opts=opts.TitleOpts(title="词频排名前20饼图", subtitle="展示各词汇词频占比"),
+                # 移除width参数，保留有效配置，解决TypeError
+                legend_opts=opts.LegendOpts(orient="vertical", pos_left="left")
+            )
+            .set_series_opts(
+                tooltip_opts=opts.TooltipOpts(formatter="{b}：{c}次（{d}%）"),
+                # 优化标签显示，避免重叠
+                label_opts=opts.LabelOpts(font_size=10, formatter="{b}: {c}次")
+            )
         )
         return pie
+    
     elif chart_type == "词频对比雷达图":
         # 雷达图取前8个词汇，避免过于拥挤
         top8_words = top20_words[:8]
         top8_counts = top20_counts[:8]
+        # 避免空数据触发异常
+        if not top8_counts:
+            top8_counts = [0] * 8
+            max_count = 10
+        else:
+            max_count = max(top8_counts)
+        
         radar = (
             Radar()
             .add_schema(
-                schema=[opts.RadarIndicatorItem(name=word, max_=max(top8_counts)) for word in top8_words],
+                schema=[opts.RadarIndicatorItem(name=word, max_=max_count) for word in top8_words],
                 shape="polygon"
             )
             .add("词频数据", [top8_counts], color="#52c41a")
@@ -242,20 +291,38 @@ def generate_chart(chart_type, filtered_word_data, top20_words, top20_counts):
         top10_words = top20_words[:10]
         top10_counts = top20_counts[:10]
         heat_data = []
-        for i in range(5):
-            for j in range(2):
-                idx = i * 2 + j
-                heat_data.append([i, j, top10_counts[idx]])
-        
+        # 确保数据足够，避免索引越界
+        if len(top10_counts) >= 10:
+            for i in range(5):
+                for j in range(2):
+                    idx = i * 2 + j
+                    heat_data.append([i, j, top10_counts[idx]])
+        else:
+            # 数据不足时填充默认值
+            for i in range(5):
+                for j in range(2):
+                    heat_data.append([i, j, 0])
+
+        # 确保y轴数据长度匹配
+        y_axis_words = []
+        for j in range(0, min(10, len(top10_words)), 2):
+            if j < len(top10_words):
+                y_axis_words.append(top10_words[j])
+            else:
+                y_axis_words.append("")
+        # 补充y轴数据到5个
+        while len(y_axis_words) < 5:
+            y_axis_words.append("")
+
         heatmap = (
             HeatMap()
             .add_xaxis([f"第{i+1}行" for i in range(5)])
-            .add_yaxis("词汇", [top10_words[j] for j in range(0, 10, 2)], heat_data)
+            .add_yaxis("词汇", y_axis_words, heat_data)
             .set_global_opts(
                 title_opts=opts.TitleOpts(title="词频前10热力图", subtitle="颜色越深词频越高"),
                 visualmap_opts=opts.VisualMapOpts(
-                    min_=min(top10_counts),
-                    max_=max(top10_counts),
+                    min_=min(top10_counts) if top10_counts else 0,
+                    max_=max(top10_counts) if top10_counts else 10,
                     orient="horizontal",
                     pos_bottom="5%"
                 ),
@@ -265,11 +332,17 @@ def generate_chart(chart_type, filtered_word_data, top20_words, top20_counts):
         return heatmap
     
     elif chart_type == "词频层级树状图":
-        # 构造树状图数据结构
+        # 构造树状图数据结构，避免空数据异常
+        treemap_children = []
+        for word, count in zip(top20_words, top20_counts):
+            treemap_children.append({"name": word, "value": count})
+        if not treemap_children:
+            treemap_children = [{"name": "无有效数据", "value": 1}]
+        
         treemap_data = [
             {
                 "name": "词频总览",
-                "children": [{"name": word, "value": count} for word, count in zip(top20_words, top20_counts)]
+                "children": treemap_children
             }
         ]
         treemap = (
@@ -331,7 +404,7 @@ if url:
             # 展示前20词频表格（不依赖pyarrow，避免之前的DLL错误）
             st.subheader("🏆 词频排名前20词汇")
             top20_df = {
-                "排名": list(range(1, 21)),
+                "排名": list(range(1, len(top20_words)+1)),  # 适配实际词汇数量
                 "词汇": top20_words,
                 "词频": top20_counts
             }
